@@ -42,7 +42,7 @@ database/
 saved_models/
  └─ modelo_cnn.keras         # Modelo CNN entrenado
 ```
-
+**Nota**: No se pudo subir el modelo_cnn.keras debido a limitaciones de espacio
  
 ## Instrucciones para Ejecutar Localmente
 
