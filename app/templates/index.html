@@ -1,0 +1,216 @@
+<!-- Estructura básica HTML para la interfaz -->
+<!-- Incluye estilos propios y librerías para íconos y fuentes -->
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+    <title>Garc-IA - Franmari & Mariannis</title>
+    <link rel="stylesheet" href="/static/styles.css" />
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css"/>
+    <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;600&family=Open+Sans:wght@400;600&display=swap" rel="stylesheet"/>
+</head>
+
+<body>
+    <div class="app-container">
+        <!-- Barra lateral con título, ícono y navegación (solo opción de Chat activa) -->
+        <aside class="sidebar">
+            <div class="sidebar-header">
+                <i class="fas fa-brain sidebar-icon"></i>
+                <h2>Garc-IA</h2>
+            </div>
+            <nav class="sidebar-nav">
+                <ul>
+                    <li class="active"><a href="#"><i class="fas fa-comments"></i> Chat</a></li>
+                </ul>
+            </nav>
+            <div class="sidebar-footer">
+                <span>Franmari & Mariannis &copy; 2025</span>
+            </div>
+        </aside>
+
+        <!-- Área principal del chat, con encabezado que presenta el sistema y su propósito -->
+        <main class="chat-main">
+            <div class="chat-header-main">
+                <i class="fas fa-robot chat-header-icon"></i>
+                <h1>Bienvenido a Garc-IA</h1>
+                <p>Tu asistente inteligente para identificar usuarios y emociones.</p>
+            </div>
+            <!-- Historial del chat donde se irán agregando los mensajes -->
+            <div id="chat-history" class="chat-history">
+                <div class="ia-message initial-message">¡Hola! Soy Garc. ¿En qué puedo ayudarte hoy?</div>
+            </div>
+
+            <div class="chat-input-area">
+                <!-- Formulario para escribir mensaje y adjuntar imagen -->
+                <!-- Permite enviar texto y adjuntar una imagen en un mismo envío -->
+                <form id="chat-form" class="chat-form" enctype="multipart/form-data">
+                    <label for="file-upload" class="icon-button" title="Adjuntar foto">
+                        <i class="fas fa-paperclip"></i>
+                    </label>
+                    <div id="file-name-display"></div> <!-- Aquí se muestra el nombre del archivo seleccionado -->
+                    <input type="file" id="file-upload" name="file" accept="image/*" style="display: none" />
+                    <input type="text" name="user_message" id="user-message" placeholder="Escribe tu mensaje aquí..." />
+                    <button type="submit" class="icon-button send-message-button" title="Enviar mensaje">
+                        <i class="fas fa-paper-plane"></i>
+                    </button>
+                </form>
+            </div>
+        </main>
+    </div>
+<script>
+// Obtiene referencias a los elementos interactivos de la interfaz
+const chatHistory = document.getElementById("chat-history");
+const chatForm = document.getElementById("chat-form");
+const fileUploadInput = document.getElementById("file-upload");
+const userMessageInput = document.getElementById("user-message");
+const fileNameDisplay = document.getElementById("file-name-display");
+
+// Muestra el nombre del archivo seleccionado debajo del clip
+fileUploadInput.addEventListener("change", () => {
+    if (fileUploadInput.files.length > 0) {
+        const fileName = fileUploadInput.files[0].name;
+        fileNameDisplay.textContent = `📎 ${fileName}`;
+    } else {
+        fileNameDisplay.textContent = "";
+    }
+});
+
+// Lógica principal al enviar el formulario (mensaje y/o imagen)
+chatForm.addEventListener("submit", async (e) => {
+    e.preventDefault();
+
+    // Captura mensaje de texto e imagen (si existe)
+    const userInput = userMessageInput.value.trim();
+    const fileInput = fileUploadInput.files[0];
+
+    if (!userInput && !fileInput) return;
+
+    // Si hay imagen, la muestra en el chat y la envía para detección de emoción
+    if (fileInput) {
+        addImageMessage(fileInput);
+        const formData = new FormData();
+        formData.append("file", fileInput);
+        await fetch("/predict/", { method: "POST", body: formData });
+        fileNameDisplay.textContent = "";
+        fileUploadInput.value = "";
+    }
+    // Si hay texto, lo muestra en el chat como usuario
+    if (userInput) {
+        addMessage(userInput, "user");
+        userMessageInput.value = "";
+    }
+    // Envía el mensaje de texto para obtener respuesta del agente IA en streaming
+    if (userInput || fileInput) {
+        const textForm = new FormData();
+        textForm.append("user_message", userInput);
+
+        // Muestra indicador de "Pensando" con spinner mientras la IA responde
+        const thinkingDiv = document.createElement("div");
+        thinkingDiv.className = "ia-message thinking";
+
+        const textSpan = document.createElement("span");
+        textSpan.textContent = "Pensando";
+
+        const spinner = document.createElement("span");
+        spinner.className = "spinner";
+
+        thinkingDiv.appendChild(textSpan);
+        thinkingDiv.appendChild(spinner);
+        chatHistory.appendChild(thinkingDiv);
+        chatHistory.scrollTop = chatHistory.scrollHeight;
+
+        try {
+            const response = await fetch("/chat/", {
+                method: "POST",
+                body: textForm,
+            });
+
+            // Procesa la respuesta de IA por streaming (línea por línea) para simular escritura en tiempo real
+            const reader = response.body.getReader();
+            // Decodifica y muestra en tiempo real el texto recibido del backend
+            let decoder = new TextDecoder();
+            let buffer = "";
+            let iaMessage = "";
+
+            let typingDiv = null;
+
+            while (true) {
+                const { done, value } = await reader.read();
+                if (done) break;
+                buffer += decoder.decode(value, { stream: true });
+
+                const lines = buffer.split("\n");
+                buffer = lines.pop();
+
+                for (const line of lines) {
+                    if (line.trim() === "") continue;
+                    try {
+                        const json = JSON.parse(line);
+                        const content = json.message?.content || "";
+                        iaMessage += content;
+
+                        if (thinkingDiv && !typingDiv) {
+                            chatHistory.removeChild(thinkingDiv);
+                            typingDiv = document.createElement("div");
+                            typingDiv.className = "ia-message typing";
+                            chatHistory.appendChild(typingDiv);
+                        }
+
+                        if (typingDiv) {
+                            typingDiv.textContent = iaMessage;
+                            chatHistory.scrollTop = chatHistory.scrollHeight;
+                        }
+                    } catch (err) {
+                        console.error("Error parsing line:", line);
+                    }
+                }
+            }
+
+            // Cuando termina de responder, actualiza la burbuja de mensaje final
+            if (typingDiv) {
+                typingDiv.classList.remove("typing");
+                typingDiv.classList.add("message", "ia-message");
+                chatHistory.scrollTop = chatHistory.scrollHeight;
+            } else {
+                chatHistory.removeChild(thinkingDiv);
+            }
+        // Si ocurre error, muestra un mensaje amigable al usuario
+        } catch (error) {
+            console.error("Error en el chat:", error);
+            if (thinkingDiv) chatHistory.removeChild(thinkingDiv);
+            addMessage("Hubo un error al procesar tu mensaje. Inténtalo de nuevo.", "ia error");
+        }
+    }
+
+    chatForm.reset();
+    fileNameDisplay.textContent = "";
+});
+
+// Función para agregar mensaje del usuario o IA al historial
+function addMessage(message, sender) {
+    const div = document.createElement("div");
+    div.className = `${sender}-message message`;
+    div.textContent = message;
+    chatHistory.appendChild(div);
+    chatHistory.scrollTop = chatHistory.scrollHeight;
+}
+
+// Función para agregar vista previa de imagen adjuntada al chat
+function addImageMessage(file) {
+    const div = document.createElement("div");
+    div.className = "user-message message";
+
+    const img = document.createElement("img");
+    img.style.maxWidth = "100px";
+    img.style.maxHeight = "100px";
+    img.style.borderRadius = "8px";
+    img.style.objectFit = "cover";
+    img.style.border = "1px solid #ccc";
+    img.src = URL.createObjectURL(file);
+
+    div.appendChild(img);
+    chatHistory.appendChild(div);
+    chatHistory.scrollTop = chatHistory.scrollHeight;
+}
+</script>
